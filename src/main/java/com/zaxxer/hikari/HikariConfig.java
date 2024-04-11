@@ -31,6 +31,10 @@ import java.io.IOException;
 import java.lang.reflect.Modifier;
 import java.security.AccessControlException;
 import java.sql.Connection;
+import java.sql.Driver;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.TreeSet;
 import java.util.concurrent.ScheduledExecutorService;
@@ -79,6 +83,7 @@ public class HikariConfig implements HikariConfigMXBean
    private String dataSourceClassName;
    private String dataSourceJndiName;
    private String driverClassName;
+   private Driver driver;
    private String exceptionOverrideClassName;
    private String jdbcUrl;
    private String poolName;
@@ -90,13 +95,13 @@ public class HikariConfig implements HikariConfigMXBean
    private boolean isRegisterMbeans;
    private boolean isAllowPoolSuspension;
    private DataSource dataSource;
-   private Properties dataSourceProperties;
+   private final Properties dataSourceProperties;
    private ThreadFactory threadFactory;
    private ScheduledExecutorService scheduledExecutor;
    private MetricsTrackerFactory metricsTrackerFactory;
    private Object metricRegistry;
    private Object healthCheckRegistry;
-   private Properties healthCheckProperties;
+   private final Properties healthCheckProperties;
 
    private long keepaliveTime;
 
@@ -473,9 +478,15 @@ public class HikariConfig implements HikariConfigMXBean
 
    public String getDriverClassName()
    {
-      return driverClassName;
+      return Optional.ofNullable(this.driverClassName).orElse(driver.getClass().getName());
    }
 
+
+   public void setDriver(Driver driver) {
+      checkIfSealed();
+      this.driver = driver;
+      this.driverClassName = driver.getClass().getName();
+   }
    public void setDriverClassName(String driverClassName)
    {
       checkIfSealed();
@@ -495,14 +506,13 @@ public class HikariConfig implements HikariConfigMXBean
       }
 
       try {
-         driverClass.getConstructor().newInstance();
+         this.driver = (Driver) driverClass.getConstructor().newInstance();
          this.driverClassName = driverClassName;
       }
       catch (Exception e) {
          throw new RuntimeException("Failed to instantiate class " + driverClassName, e);
       }
    }
-
    public String getJdbcUrl()
    {
       return jdbcUrl;
@@ -1000,7 +1010,6 @@ public class HikariConfig implements HikariConfigMXBean
       transactionIsolationName = getNullIfEmpty(transactionIsolationName);
       dataSourceClassName = getNullIfEmpty(dataSourceClassName);
       dataSourceJndiName = getNullIfEmpty(dataSourceJndiName);
-      driverClassName = getNullIfEmpty(driverClassName);
       jdbcUrl = getNullIfEmpty(jdbcUrl);
 
       // Check Data Source Options
@@ -1010,8 +1019,8 @@ public class HikariConfig implements HikariConfigMXBean
          }
       }
       else if (dataSourceClassName != null) {
-         if (driverClassName != null) {
-            LOGGER.error("{} - cannot use driverClassName and dataSourceClassName together.", poolName);
+         if (driver != null) {
+            LOGGER.error("{} - cannot use driver and dataSourceClassName together.", poolName);
             // NOTE: This exception text is referenced by a Spring Boot FailureAnalyzer, it should not be
             // changed without first notifying the Spring Boot developers.
             throw new IllegalStateException("cannot use driverClassName and dataSourceClassName together.");
@@ -1023,9 +1032,9 @@ public class HikariConfig implements HikariConfigMXBean
       else if (jdbcUrl != null || dataSourceJndiName != null) {
          // ok
       }
-      else if (driverClassName != null) {
-         LOGGER.error("{} - jdbcUrl is required with driverClassName.", poolName);
-         throw new IllegalArgumentException("jdbcUrl is required with driverClassName.");
+      else if (driver != null) {
+         LOGGER.error("{} - jdbcUrl is required with driver.", poolName);
+         throw new IllegalArgumentException("jdbcUrl is required with driver.");
       }
       else {
          LOGGER.error("{} - dataSource or dataSourceClassName or jdbcUrl is required.", poolName);
@@ -1199,5 +1208,9 @@ public class HikariConfig implements HikariConfigMXBean
          }
       }
       return object;
+   }
+
+   public Driver getDriver() {
+      return this.driver;
    }
 }

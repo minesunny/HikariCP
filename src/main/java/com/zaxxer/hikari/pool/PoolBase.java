@@ -314,7 +314,6 @@ abstract class PoolBase
       final var username = config.getUsername();
       final var password = config.getPassword();
       final var dsClassName = config.getDataSourceClassName();
-      final var driverClassName = config.getDriverClassName();
       final var dataSourceJNDI = config.getDataSourceJNDI();
       final var dataSourceProperties = config.getDataSourceProperties();
 
@@ -324,7 +323,7 @@ abstract class PoolBase
          PropertyElf.setTargetFromProperties(ds, dataSourceProperties);
       }
       else if (jdbcUrl != null && ds == null) {
-         ds = new DriverDataSource(jdbcUrl, driverClassName, dataSourceProperties, username, password);
+         ds = new DriverDataSource(jdbcUrl, config.getDriver(), dataSourceProperties, username, password);
       }
       else if (dataSourceJNDI != null && ds == null) {
          try {
