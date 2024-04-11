@@ -31,6 +31,7 @@ import java.io.IOException;
 import java.lang.reflect.Modifier;
 import java.security.AccessControlException;
 import java.sql.Connection;
+import java.sql.Driver;
 import java.util.Properties;
 import java.util.TreeSet;
 import java.util.concurrent.ScheduledExecutorService;
@@ -79,6 +80,7 @@ public class HikariConfig implements HikariConfigMXBean
    private String dataSourceClassName;
    private String dataSourceJndiName;
    private String driverClassName;
+   private Driver driver;
    private String exceptionOverrideClassName;
    private String jdbcUrl;
    private String poolName;
@@ -470,6 +472,12 @@ public class HikariConfig implements HikariConfigMXBean
       return driverClassName;
    }
 
+
+   public void setDriver(Driver driver) {
+      checkIfSealed();
+      this.driver = driver;
+      this.driverClassName = driver.getClass().getName();
+   }
    public void setDriverClassName(String driverClassName)
    {
       checkIfSealed();
@@ -489,7 +497,7 @@ public class HikariConfig implements HikariConfigMXBean
       }
 
       try {
-         driverClass.getConstructor().newInstance();
+         this.driver = (Driver) driverClass.getConstructor().newInstance();
          this.driverClassName = driverClassName;
       }
       catch (Exception e) {
@@ -1193,5 +1201,9 @@ public class HikariConfig implements HikariConfigMXBean
          }
       }
       return object;
+   }
+
+   public Driver getDriver() {
+      return this.driver;
    }
 }
