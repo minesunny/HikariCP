@@ -426,6 +426,22 @@ Please read the [Rapid Recovery Guide](https://github.com/brettwooldridge/Hikari
 
 ----------------------------------------------------
 
+### :see_no_evil: Secret Properties
+
+HikariCP has several Java system properties that control various aspects of the pool. These properties are *completely unsupported*
+for user manipulation. It is possible though unlikely that they may not exist in the future. This means: do not even think of opening
+an issue of any kind if you have modified these properties. You have been warned. *In fact, pretend you never heard anything about
+"secret properties".*
+
+| Property                                      | Description                                                                                                                                                                                                                                       |
+|:----------------------------------------------|:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| ``com.zaxxer.hikari.blockUntilFilled``        | When this property is set ``true`` *and* ``initializationFailTimeout`` is greater than 1, the pool will block during start until completely filled.                                                                                               |
+| ``com.zaxxer.hikari.enableRequestBoundaries`` | When this property is set ``true``, HikariCP will bracket connection acquisition and return with calls to ``Connection.beginRequest()`` and ``Connection.endRequest()``.                                                                          |
+| ``com.zaxxer.hikari.housekeeping.period``     | This property controls the frequency of the housekeeping thread, represented in milliseconds. Really, don't mess with this.                                                                                                                       |
+| ``com.zaxxer.hikari.useWeakReferences``       | When this property is set ``true`` it will force HikariCP to use ``WeakReference`` objects in the ``ConcurrentBag`` internal collection ThreadLocals and prevent the use of our ``FastList`` class, all to avoid TomCat warnings during redeploy. |
+
+Seriously, either don't use these properties or take on full responsibility for the consequences.
+
 ### :rocket: Initialization
 
 You can use the ``HikariConfig`` class like so<sup>1</sup>:
@@ -547,7 +563,7 @@ Don't forget the [Wiki](https://github.com/brettwooldridge/HikariCP/wiki) for ad
 
 ### Requirements
 
- &#8658; Java 8+ (Java 6/7 artifacts are in maintenance mode)<br/>
+ &#8658; Java 11+ (Java 6/7/8 artifacts are in maintenance mode)<br/>
  &#8658; slf4j library<br/>
 
 ### Sponsors
