@@ -1,5 +1,9 @@
 HikariCP Changes
 
+Changes in 6.2.2
+
+ * increase keepaliveTime variance from 10% to 20%
+
 Changes in 6.2.1
 
  * change default keepaliveTime to 2 minutes

@@ -493,8 +493,8 @@ public final class HikariPool extends PoolBase implements HikariPoolMXBean, IBag
 
          final long keepaliveTime = config.getKeepaliveTime();
          if (keepaliveTime > 0) {
-            // variance up to 10% of the heartbeat time
-            final var variance = ThreadLocalRandom.current().nextLong(keepaliveTime / 10);
+            // variance up to 20% of the heartbeat time
+            final var variance = ThreadLocalRandom.current().nextLong(keepaliveTime / 5);
             final var heartbeatTime = keepaliveTime - variance;
             poolEntry.setKeepalive(houseKeepingExecutorService.scheduleWithFixedDelay(new KeepaliveTask(poolEntry), heartbeatTime, heartbeatTime, MILLISECONDS));
          }
