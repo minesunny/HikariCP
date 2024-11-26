@@ -22,7 +22,6 @@ import org.slf4j.LoggerFactory;
 import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.*;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -147,7 +146,7 @@ public final class PropertyElf
          var paramClass = writeMethod.getParameterTypes()[0];
          String value = propValue.toString();
          if (paramClass == int.class) {
-            writeMethod.invoke(target, parseDuration(value).map(duration -> (int) duration.toMillis()).orElseGet(() -> Integer.parseInt(value)));
+            writeMethod.invoke(target, Integer.parseInt(propValue.toString()));
          }
          else if (paramClass == long.class) {
             writeMethod.invoke(target, parseDuration(value).map(Duration::toMillis).orElseGet(() -> Long.parseLong(value)));
@@ -189,10 +188,10 @@ public final class PropertyElf
 
    private static Optional<Duration> parseDuration(String value)
    {
-      Matcher matcher = DURATION_PATTERN.matcher(value);
+      var matcher = DURATION_PATTERN.matcher(value);
       if (matcher.matches()) {
-         long number = Long.parseLong(matcher.group("number"));
-         String unit = matcher.group("unit");
+         var number = Long.parseLong(matcher.group("number"));
+         var unit = matcher.group("unit");
          switch (unit) {
             case "ms":
                return Optional.of(Duration.ofMillis(number));

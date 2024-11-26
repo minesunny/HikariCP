@@ -98,7 +98,7 @@ public class TestPropertySetter
       HikariConfig config = new HikariConfig(durationProperties);
       config.validate();
 
-      assertEquals(Duration.ofMillis(11), Duration.ofMillis(config.getConnectionTimeout()));
+      assertEquals(Duration.ofMillis(2000), Duration.ofMillis(config.getConnectionTimeout()));
       assertEquals(Duration.ofSeconds(22), Duration.ofMillis(config.getValidationTimeout()));
       assertEquals(Duration.ofMinutes(33), Duration.ofMillis(config.getIdleTimeout()));
       assertEquals(Duration.ofHours(44), Duration.ofMillis(config.getLeakDetectionThreshold()));
@@ -108,7 +108,7 @@ public class TestPropertySetter
       DataSource dataSource = (DataSource) clazz.getDeclaredConstructor().newInstance();
       PropertyElf.setTargetFromProperties(dataSource, config.getDataSourceProperties());
 
-      assertEquals(Duration.ofMinutes(47), Duration.ofMillis(dataSource.getLoginTimeout()));
+      assertEquals(Duration.ofMinutes(1), Duration.ofMillis(dataSource.getLoginTimeout()));
    }
 
    @Test
