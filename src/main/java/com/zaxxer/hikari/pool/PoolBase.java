@@ -220,6 +220,7 @@ abstract class PoolBase
       }
 
       if ((dirtyBits & DIRTY_BIT_ISOLATION) != 0 && proxyConnection.getTransactionIsolationState() != transactionIsolation) {
+         //noinspection MagicConstant
          connection.setTransactionIsolation(transactionIsolation);
          resetBits |= DIRTY_BIT_ISOLATION;
       }
@@ -428,6 +429,7 @@ abstract class PoolBase
          checkDriverSupport(connection);
 
          if (transactionIsolation != defaultTransactionIsolation) {
+            //noinspection MagicConstant
             connection.setTransactionIsolation(transactionIsolation);
          }
 
