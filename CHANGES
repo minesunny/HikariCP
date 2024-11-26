@@ -4,7 +4,7 @@ Changes in 6.2.2
 
  * increase keepaliveTime variance from 10% to 20%
 
- * support duration values for configuration from properties, such as 10ms, 20s, 30m, 40h or 50d
+ * merged #2266 support duration values for configuration from properties, such as 10ms, 20s, 30m, 40h or 50d
 
 Changes in 6.2.1
 
