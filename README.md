@@ -46,7 +46,7 @@ _**Java 11+** maven artifact:_
    <version>6.2.1</version>
 </dependency>
 ```
-_Java 8 maven artifact (*maintenance mode*):_
+_Java 8 maven artifact (*deprecated*):_
 ```xml
 <dependency>
    <groupId>com.zaxxer</groupId>
@@ -54,7 +54,7 @@ _Java 8 maven artifact (*maintenance mode*):_
    <version>4.0.3</version>
 </dependency>
 ```
-_Java 7 maven artifact (*maintenance mode*):_
+_Java 7 maven artifact (*deprecated*):_
 ```xml
 <dependency>
    <groupId>com.zaxxer</groupId>
@@ -62,7 +62,7 @@ _Java 7 maven artifact (*maintenance mode*):_
    <version>2.4.13</version>
 </dependency>
 ```
-_Java 6 maven artifact (*maintenance mode*):_
+_Java 6 maven artifact (*deprecated*):_
 ```xml
 <dependency>
    <groupId>com.zaxxer</groupId>
