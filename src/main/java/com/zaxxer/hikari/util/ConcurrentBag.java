@@ -61,9 +61,9 @@ public class ConcurrentBag<T extends IConcurrentBagEntry> implements AutoCloseab
    private static final Logger LOGGER = LoggerFactory.getLogger(ConcurrentBag.class);
 
    private final CopyOnWriteArrayList<T> sharedList;
-   private final boolean weakThreadLocals;
+   private final boolean useWeakThreadLocals;
 
-   private final ThreadLocal<List<Object>> threadList;
+   private final ThreadLocal<List<Object>> threadLocalList;
    private final IBagStateListener listener;
    private final AtomicInteger waiters;
    private volatile boolean closed;
@@ -95,17 +95,14 @@ public class ConcurrentBag<T extends IConcurrentBagEntry> implements AutoCloseab
    public ConcurrentBag(final IBagStateListener listener)
    {
       this.listener = listener;
-      this.weakThreadLocals = useWeakThreadLocals();
+      this.useWeakThreadLocals = useWeakThreadLocals();
 
       this.handoffQueue = new SynchronousQueue<>(true);
       this.waiters = new AtomicInteger();
       this.sharedList = new CopyOnWriteArrayList<>();
-      if (weakThreadLocals) {
-         this.threadList = ThreadLocal.withInitial(() -> new ArrayList<>(16));
-      }
-      else {
-         this.threadList = ThreadLocal.withInitial(() -> new FastList<>(IConcurrentBagEntry.class, 16));
-      }
+      this.threadLocalList = ThreadLocal.withInitial(() ->
+         useWeakThreadLocals ? new ArrayList<>(16) : new FastList<>(IConcurrentBagEntry.class, 16)
+      );
    }
 
    /**
@@ -120,18 +117,18 @@ public class ConcurrentBag<T extends IConcurrentBagEntry> implements AutoCloseab
    public T borrow(long timeout, final TimeUnit timeUnit) throws InterruptedException
    {
       // Try the thread-local list first
-      final var list = threadList.get();
-      for (int i = list.size() - 1; i >= 0; i--) {
+      final var list = threadLocalList.get();
+      for (var i = list.size() - 1; i >= 0; i--) {
          final var entry = list.remove(i);
          @SuppressWarnings("unchecked")
-         final T bagEntry = weakThreadLocals ? ((WeakReference<T>) entry).get() : (T) entry;
+         final T bagEntry = useWeakThreadLocals ? ((WeakReference<T>) entry).get() : (T) entry;
          if (bagEntry != null && bagEntry.compareAndSet(STATE_NOT_IN_USE, STATE_IN_USE)) {
             return bagEntry;
          }
       }
 
       // Otherwise, scan the shared list ... then poll the handoff queue
-      final int waiting = waiters.incrementAndGet();
+      final var waiting = waiters.incrementAndGet();
       try {
          for (T bagEntry : sharedList) {
             if (bagEntry.compareAndSet(STATE_NOT_IN_USE, STATE_IN_USE)) {
@@ -188,9 +185,9 @@ public class ConcurrentBag<T extends IConcurrentBagEntry> implements AutoCloseab
          }
       }
 
-      final var threadLocalList = threadList.get();
-      if (threadLocalList.size() < 50) {
-         threadLocalList.add(weakThreadLocals ? new WeakReference<>(bagEntry) : bagEntry);
+      final var threadLocalEntries = this.threadLocalList.get();
+      if (threadLocalEntries.size() < 16) {
+         threadLocalEntries.add(useWeakThreadLocals ? new WeakReference<>(bagEntry) : bagEntry);
       }
    }
 
@@ -230,12 +227,12 @@ public class ConcurrentBag<T extends IConcurrentBagEntry> implements AutoCloseab
          return false;
       }
 
-      final boolean removed = sharedList.remove(bagEntry);
+      final var removed = sharedList.remove(bagEntry);
       if (!removed && !closed) {
          LOGGER.warn("Attempt to remove an object from the bag that does not exist: {}", bagEntry);
       }
 
-      threadList.get().remove(bagEntry);
+      threadLocalList.get().remove(bagEntry);
 
       return removed;
    }
@@ -307,7 +304,7 @@ public class ConcurrentBag<T extends IConcurrentBagEntry> implements AutoCloseab
    {
       if (bagEntry.compareAndSet(STATE_RESERVED, STATE_NOT_IN_USE)) {
          // spin until a thread takes it or none are waiting
-         while (waiters.get() > 0 && !handoffQueue.offer(bagEntry)) {
+         while (waiters.get() > 0 && bagEntry.getState() == STATE_NOT_IN_USE && !handoffQueue.offer(bagEntry)) {
             Thread.yield();
          }
       }
