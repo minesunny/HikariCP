@@ -33,7 +33,7 @@ jobs:
 #        run: mvn --no-transfer-progress -B clean package --file pom.xml
 
       - name: Publish to GitHub Packages Ali Maven
-        run: ls -lath
+        run: ls -lath && cat ./settings.xml
         env:
           USERNAME: ${{ secrets.USERNAME }}
           PASSWORD: ${{ secrets.PASSWORD }}
