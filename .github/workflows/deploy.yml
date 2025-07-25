@@ -33,7 +33,7 @@ jobs:
 #        run: mvn --no-transfer-progress -B clean package --file pom.xml
 
       - name: Publish to GitHub Packages Ali Maven
-        run: mvn deploy -DskipTests -s $GITHUB_WORKSPACE/settings.xml
+        run: ls -lath
         env:
           USERNAME: ${{ secrets.USERNAME }}
           PASSWORD: ${{ secrets.PASSWORD }}
