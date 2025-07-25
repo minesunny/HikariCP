@@ -4,6 +4,7 @@
 name: Maven Package
 
 on:
+  workflow_dispatch:  # 这是关键，表示支持手动触发
   push:
     tags:
       - 'HikariCP*'
@@ -26,11 +27,13 @@ jobs:
           server-id: github
           settings-path: ${{ github.workspace }}
 
-      - name: Build with Maven
-        run: mvn --no-transfer-progress -B clean package --file pom.xml
+#      - name: Build with Maven
+#        run: mvn --no-transfer-progress -B clean package --file pom.xml
 
-      - name: Publish to GitHub Packages Apache Maven
-        run: mvn deploy -DskipTests -s $GITHUB_WORKSPACE/settings.xml
+      - name: Publish to GitHub Packages Ali Maven
+        run: echo $GITHUB_WORKSPACE/settings.xml
+          | pwd
+          | mvn deploy -DskipTests -s $GITHUB_WORKSPACE/settings.xml
         env:
           USERNAME: ${{ secrets.USERNAME }}
           PASSWORD: ${{ secrets.PASSWORD }}
