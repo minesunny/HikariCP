@@ -4,10 +4,7 @@
 name: Maven Package
 
 on:
-  workflow_dispatch:  # 这是关键，表示支持手动触发
-  push:
-    tags:
-      - 'HikariCP*'
+  workflow_dispatch:
 
 jobs:
   build:
