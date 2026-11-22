@@ -53,6 +53,8 @@ public abstract class ProxyConnection implements Connection
    private final PoolEntry poolEntry;
    private final ProxyLeakTask leakTask;
    private final FastList<Statement> openStatements;
+   private final long borrowId = PoolEntry.nextId();
+   private final long borrowCount;
 
    private int dirtyBits;
    private boolean isCommitStateDirty;
@@ -93,8 +95,33 @@ public abstract class ProxyConnection implements Connection
       this.delegate = connection;
       this.openStatements = openStatements;
       this.leakTask = leakTask;
+      this.borrowCount = poolEntry.beginBorrow(borrowId);
       this.isReadOnly = isReadOnly;
       this.isAutoCommit = isAutoCommit;
+   }
+
+   /**
+    * @return the pool entry's stable identifier, shared by all borrows of that physical connection
+    */
+   public final long getId()
+   {
+      return poolEntry.id;
+   }
+
+   /**
+    * @return the identifier assigned to this borrow
+    */
+   final long getBorrowId()
+   {
+      return borrowId;
+   }
+
+   /**
+    * @return this proxy's one-based borrow number for the physical connection
+    */
+   public final long getBorrowCount()
+   {
+      return borrowCount;
    }
 
    /** {@inheritDoc} */
@@ -265,7 +292,7 @@ public abstract class ProxyConnection implements Connection
          }
          finally {
             delegate = ClosedConnection.CLOSED_CONNECTION;
-            poolEntry.recycle();
+            poolEntry.recycle(this);
          }
       }
    }

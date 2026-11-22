@@ -1,19 +1,18 @@
 package com.zaxxer.hikari.pool;
 
-import com.zaxxer.hikari.mocks.StubConnection;
+import com.zaxxer.hikari.mocks.StubDataSource;
 import com.zaxxer.hikari.pool.TestElf.FauxWebClassLoader;
 import com.zaxxer.hikari.util.JavassistProxyFactory;
 import org.junit.Assert;
 import org.junit.Test;
 
-import java.lang.reflect.Method;
+import javax.sql.DataSource;
 import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.Statement;
-import java.util.stream.Stream;
 
 public class TestJavassistCodegen {
    @Test
@@ -35,35 +34,17 @@ public class TestJavassistCodegen {
       Assert.assertTrue("Generated proxy class should be public", Modifier.isPublic(mod));
       Assert.assertTrue("Generated proxy class should be final", Modifier.isFinal(mod));
 
-      Class<?> proxyFactoryClass = fauxClassLoader.loadClass("com.zaxxer.hikari.pool.ProxyFactory");
+      Class<?> configClass = fauxClassLoader.loadClass("com.zaxxer.hikari.HikariConfig");
+      Object config = configClass.getConstructor().newInstance();
+      configClass.getMethod("setDataSource", DataSource.class).invoke(config, new StubDataSource());
+      configClass.getMethod("setMaximumPoolSize", int.class).invoke(config, 1);
 
-      Connection connection = new StubConnection();
-
-      Class<?> fastListClass = fauxClassLoader.loadClass("com.zaxxer.hikari.util.FastList");
-      Object fastList = fastListClass.getConstructor(Class.class).newInstance(Statement.class);
-
-      Object proxyConnection = getMethod(proxyFactoryClass, "getProxyConnection")
-         .invoke(null,
-            null /*poolEntry*/,
-            connection,
-            fastList,
-            null /*leakTask*/,
-            Boolean.FALSE /*isReadOnly*/,
-            Boolean.FALSE /*isAutoCommit*/);
-      Assert.assertNotNull(proxyConnection);
-
-      Object proxyStatement = getMethod(proxyConnection.getClass(), "createStatement", 0)
-         .invoke(proxyConnection);
-      Assert.assertNotNull(proxyStatement);
-   }
-
-   private Method getMethod(Class<?> clazz, String methodName, Integer... parameterCount)
-   {
-      return Stream.of(clazz.getDeclaredMethods())
-          .filter(method -> method.getName().equals(methodName))
-          .filter(method -> (parameterCount.length == 0 || parameterCount[0] == method.getParameterCount()))
-          .peek(method -> method.setAccessible(true))
-          .findFirst()
-          .orElseThrow(RuntimeException::new);
+      Class<?> dataSourceClass = fauxClassLoader.loadClass("com.zaxxer.hikari.HikariDataSource");
+      try (AutoCloseable dataSource = (AutoCloseable) dataSourceClass.getConstructor(configClass).newInstance(config);
+           Connection connection = ((DataSource) dataSource).getConnection();
+           Statement statement = connection.createStatement()) {
+         Assert.assertSame(fauxClassLoader, connection.getClass().getClassLoader());
+         Assert.assertSame(fauxClassLoader, statement.getClass().getClassLoader());
+      }
    }
 }

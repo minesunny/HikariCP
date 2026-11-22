@@ -91,17 +91,17 @@ class PrometheusHistogramMetricsTracker implements IMetricsTracker
    }
 
    @Override
-   public void recordConnectionAcquiredNanos(long elapsedAcquiredNanos) {
+   public void recordConnectionAcquiredNanos(long elapsedAcquiredNanos, long connectionId, long borrowId, long borrowCount) {
       elapsedAcquiredHistogramChild.observe(elapsedAcquiredNanos);
    }
 
    @Override
-   public void recordConnectionUsageMillis(long elapsedBorrowedMillis) {
+   public void recordConnectionUsageMillis(long elapsedBorrowedMillis, long connectionId, long borrowId, long borrowCount) {
       elapsedBorrowedHistogramChild.observe(elapsedBorrowedMillis);
    }
 
    @Override
-   public void recordConnectionCreatedMillis(long connectionCreatedMillis) {
+   public void recordConnectionCreatedMillis(long connectionCreatedMillis, long connectionId, long borrowId) {
       elapsedCreationHistogramChild.observe(connectionCreatedMillis);
    }
 

@@ -19,7 +19,12 @@ package com.zaxxer.hikari.metrics;
 import static com.zaxxer.hikari.util.ClockSource.currentTime;
 import static com.zaxxer.hikari.util.ClockSource.plusMillis;
 
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongFunction;
+import java.util.function.Supplier;
 
 /**
  *
@@ -29,6 +34,8 @@ public abstract class PoolStats
 {
    private final AtomicLong reloadAt;
    private final long timeoutMs;
+   private final LongFunction<ConnectionStats> connectionStatsLookup;
+   private final Supplier<List<ConnectionStats>> connectionStatsSnapshot;
 
    protected volatile int totalConnections;
    protected volatile int idleConnections;
@@ -39,8 +46,16 @@ public abstract class PoolStats
 
    public PoolStats(final long timeoutMs)
    {
+      this(timeoutMs, ignored -> null, List::of);
+   }
+
+   protected PoolStats(final long timeoutMs, final LongFunction<ConnectionStats> connectionStatsLookup,
+                       final Supplier<List<ConnectionStats>> connectionStatsSnapshot)
+   {
       this.timeoutMs = timeoutMs;
       this.reloadAt = new AtomicLong();
+      this.connectionStatsLookup = Objects.requireNonNull(connectionStatsLookup);
+      this.connectionStatsSnapshot = Objects.requireNonNull(connectionStatsSnapshot);
    }
 
    public int getTotalConnections()
@@ -93,6 +108,41 @@ public abstract class PoolStats
       }
 
       return minConnections;
+   }
+
+   /**
+    * @return the number of JDBC statement executions started during this pool's lifetime
+    */
+   public long getExecutionCount()
+   {
+      return 0;
+   }
+
+   /**
+    * @return the number of JDBC statement executions that failed during this pool's lifetime
+    */
+   public long getFailureCount()
+   {
+      return 0;
+   }
+
+   /**
+    * Returns the execution counters for an active borrow from this pool.
+    *
+    * @param borrowId the identifier reported by the acquisition metrics callback
+    * @return the current counters, or an empty result when the borrow is absent
+    */
+   public Optional<ConnectionStats> getConnectionStats(long borrowId)
+   {
+      return Optional.ofNullable(connectionStatsLookup.apply(borrowId));
+   }
+
+   /**
+    * @return an immutable snapshot of the execution counters for all active borrows in this pool
+    */
+   public List<ConnectionStats> getConnectionStats()
+   {
+      return List.copyOf(connectionStatsSnapshot.get());
    }
 
    protected abstract void update();

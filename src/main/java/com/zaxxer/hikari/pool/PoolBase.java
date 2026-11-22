@@ -128,7 +128,7 @@ abstract class PoolBase
       return poolName;
    }
 
-   abstract void recycle(final PoolEntry poolEntry);
+   abstract void recycle(final ProxyConnection proxyConnection);
 
    // ***********************************************************************
    //                           JDBC methods
@@ -207,7 +207,18 @@ abstract class PoolBase
 
    PoolEntry newPoolEntry(final boolean isEmptyPool) throws Exception
    {
-      return new PoolEntry(newConnection(isEmptyPool), this, isReadOnly, isAutoCommit);
+      final var start = currentTime();
+      PoolEntry poolEntry = null;
+      try {
+         poolEntry = new PoolEntry(newConnection(isEmptyPool), this, isReadOnly, isAutoCommit);
+         return poolEntry;
+      }
+      finally {
+         // The tracker is not initialized during the startup check.
+         if (metricsTracker != null) {
+            metricsTracker.recordConnectionCreated(elapsedMillis(start), poolEntry == null ? 0L : poolEntry.id);
+         }
+      }
    }
 
    void resetConnectionState(final Connection connection, final ProxyConnection proxyConnection, final int dirtyBits) throws SQLException
@@ -398,12 +409,6 @@ abstract class PoolBase
 
          lastConnectionFailure.set(t);
          throw t;
-      }
-      finally {
-         // tracker will be null during failFast check
-         if (metricsTracker != null) {
-            metricsTracker.recordConnectionCreated(elapsedMillis(start));
-         }
       }
    }
 
@@ -719,13 +724,13 @@ abstract class PoolBase
 
    interface IMetricsTrackerDelegate extends AutoCloseable
    {
-      default void recordConnectionUsage(PoolEntry poolEntry) {}
+      default void recordConnectionUsage(ProxyConnection proxyConnection) {}
 
-      default void recordConnectionCreated(long connectionCreatedMillis) {}
+      default void recordConnectionCreated(long connectionCreatedMillis, long connectionId) {}
 
       default void recordBorrowTimeoutStats(long startTime) {}
 
-      default void recordBorrowStats(final PoolEntry poolEntry, final long startTime) {}
+      default void recordBorrowStats(ProxyConnection proxyConnection, long startTime, long acquiredAt) {}
 
       default void recordConnectionTimeout() {}
 
@@ -748,29 +753,30 @@ abstract class PoolBase
       }
 
       @Override
-      public void recordConnectionUsage(final PoolEntry poolEntry)
+      public void recordConnectionUsage(final ProxyConnection proxyConnection)
       {
-         tracker.recordConnectionUsageMillis(poolEntry.getMillisSinceBorrowed());
+         tracker.recordConnectionUsageMillis(proxyConnection.getPoolEntry().getMillisSinceBorrowed(), proxyConnection.getId(),
+            proxyConnection.getBorrowId(), proxyConnection.getBorrowCount());
       }
 
       @Override
-      public void recordConnectionCreated(long connectionCreatedMillis)
+      public void recordConnectionCreated(long connectionCreatedMillis, long connectionId)
       {
-         tracker.recordConnectionCreatedMillis(connectionCreatedMillis);
+         tracker.recordConnectionCreatedMillis(connectionCreatedMillis, connectionId, 0L);
       }
 
       @Override
       public void recordBorrowTimeoutStats(long startTime)
       {
-         tracker.recordConnectionAcquiredNanos(elapsedNanos(startTime));
+         tracker.recordConnectionAcquiredNanos(elapsedNanos(startTime), 0L, 0L, 0L);
       }
 
       @Override
-      public void recordBorrowStats(final PoolEntry poolEntry, final long startTime)
+      public void recordBorrowStats(final ProxyConnection proxyConnection, final long startTime, final long acquiredAt)
       {
-         final var now = currentTime();
-         poolEntry.lastBorrowed = now;
-         tracker.recordConnectionAcquiredNanos(elapsedNanos(startTime, now));
+         proxyConnection.getPoolEntry().lastBorrowed = acquiredAt;
+         tracker.recordConnectionAcquiredNanos(elapsedNanos(startTime, acquiredAt), proxyConnection.getId(),
+            proxyConnection.getBorrowId(), proxyConnection.getBorrowCount());
       }
 
       @Override

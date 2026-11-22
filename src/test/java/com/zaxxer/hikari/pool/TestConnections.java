@@ -106,6 +106,38 @@ public class TestConnections
    }
 
    @Test
+   public void testConnectionIdAndBorrowCount() throws SQLException
+   {
+      HikariConfig config = newHikariConfig();
+      config.setMaximumPoolSize(1);
+      config.setDataSource(new StubDataSource());
+
+      try (HikariDataSource ds = new HikariDataSource(config)) {
+         ProxyConnection first = (ProxyConnection) ds.getConnection();
+         long firstBorrowId = first.getBorrowId();
+         try (first) {
+            assertNotEquals(first.getId(), firstBorrowId);
+            assertEquals(1L, first.getBorrowCount());
+         }
+
+         try (ProxyConnection second = (ProxyConnection) ds.getConnection()) {
+            assertEquals(first.getId(), second.getId());
+            assertEquals(firstBorrowId, first.getBorrowId());
+            assertNotEquals(firstBorrowId, second.getBorrowId());
+            assertNotEquals(second.getId(), second.getBorrowId());
+            assertEquals(2L, second.getBorrowCount());
+            assertEquals(1L, first.getBorrowCount());
+         }
+
+         ds.getHikariPoolMXBean().softEvictConnections();
+         try (ProxyConnection replacement = (ProxyConnection) ds.getConnection()) {
+            assertNotEquals(first.getId(), replacement.getId());
+            assertEquals(1L, replacement.getBorrowCount());
+         }
+      }
+   }
+
+   @Test
    public void testMaxLifetime() throws Exception
    {
       HikariConfig config = newHikariConfig();
