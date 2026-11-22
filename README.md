@@ -20,6 +20,9 @@ Fast, simple, reliable.  HikariCP is a "zero-overhead" production ready JDBC con
 ----------------------------------------------------
 
 ### Index
+* [Fork features](#fork-features)
+  * [Custom JDBC driver loading](#custom-jdbc-driver-loading)
+  * [Connection and SQL execution monitoring](#connection-and-sql-execution-monitoring)
 * [Artifacts](#artifacts)
 * [JMH Benchmarks](#checkered_flag-jmh-benchmarks)
 * [Analyses](#microscope-analyses)
@@ -33,6 +36,75 @@ Fast, simple, reliable.  HikariCP is a "zero-overhead" production ready JDBC con
   * [Frequently used](#frequently-used)
   * [Infrequently used](#infrequently-used)
 * [Initialization](#rocket-initialization)
+
+----------------------------------------------------
+
+### Fork features
+
+Use a build from this fork for the monitoring APIs described here. The [Artifacts](#artifacts) section lists upstream HikariCP releases.
+
+#### Custom JDBC driver loading
+
+Use an application-provided `ClassLoader` to load a JDBC driver from a plugin or a separate JAR. On the `Hikari` branch, set the thread context class loader while configuring `driverClassName` and constructing the pool. Set the JDBC URL and credentials on `config` before calling this helper.
+
+```java
+import com.zaxxer.hikari.HikariConfig;
+import com.zaxxer.hikari.HikariDataSource;
+
+static HikariDataSource openPool(HikariConfig config, ClassLoader driverLoader, String driverClassName) {
+   Thread thread = Thread.currentThread();
+   ClassLoader previousLoader = thread.getContextClassLoader();
+   try {
+      thread.setContextClassLoader(driverLoader);
+      config.setDriverClassName(driverClassName);
+      return new HikariDataSource(config);
+   }
+   finally {
+      thread.setContextClassLoader(previousLoader);
+   }
+}
+```
+
+Keep the driver loader open until the pool closes. During pool initialization, HikariCP first checks `DriverManager` for a visible driver with the configured class name. It tries the thread context loader and then its own loader if it needs to instantiate the driver itself.
+
+The 5.0.1 maintenance branch also provides `HikariConfig.setDriver(Driver)`. Load and instantiate the driver with the application's class loader, then pass the instance and `jdbcUrl` to HikariCP. The pool uses that instance to open connections. [5.0.1 maintenance branch](https://github.com/minesunny/HikariCP/tree/Lux/501/HikariCP-5.0.1)
+
+#### Connection and SQL execution monitoring
+
+Register a `MetricsTrackerFactory` before starting the pool. HikariCP passes `PoolStats` to the factory so the application can read pool gauges, SQL counters and active borrows. The example uses a `config` that already has connection settings.
+
+```java
+import com.zaxxer.hikari.HikariDataSource;
+import com.zaxxer.hikari.metrics.ConnectionStats;
+import com.zaxxer.hikari.metrics.IMetricsTracker;
+import com.zaxxer.hikari.metrics.PoolStats;
+import java.sql.Connection;
+import java.sql.Statement;
+import java.util.concurrent.atomic.AtomicReference;
+
+AtomicReference<PoolStats> statsRef = new AtomicReference<>();
+config.setMetricsTrackerFactory((poolName, stats) -> {
+   statsRef.set(stats);
+   return new IMetricsTracker() {};
+});
+
+try (HikariDataSource pool = new HikariDataSource(config);
+     Connection connection = pool.getConnection();
+     Statement statement = connection.createStatement()) {
+   statement.execute("SELECT 1");
+   PoolStats stats = statsRef.get();
+   System.out.printf("Pool executions: %d, failures: %d%n", stats.getExecutionCount(), stats.getFailureCount());
+   for (ConnectionStats borrow : stats.getConnectionStats()) {
+      System.out.printf("Borrow %d: %d executions, %d running%n",
+         borrow.getBorrowId(), borrow.getExecutionCount(), borrow.getRunningCount());
+   }
+}
+```
+
+- **Pool metrics.** `PoolStats` exposes total, active and idle connections and the number of threads waiting for a connection. SQL execution and failure counters accumulate over the lifetime of the pool.
+- **Active borrows.** Use `getConnectionStats()` for a snapshot of active borrows and `getConnectionStats(borrowId)` for one borrow. Each snapshot includes execution and failure counts, the number of running executions, and timestamps for the borrow, the latest activity and the oldest running execution. Returning a connection removes its borrow from the active snapshots.
+- **Connection lifecycle.** `IMetricsTracker` callbacks report the physical `connectionId` on creation, acquisition and return. Each acquisition has its own `borrowId` and a one-based `borrowCount` for that physical connection. Use the acquisition callback's `borrowId` to look up an active borrow. Custom trackers should implement the callback signatures that receive these IDs.
+- **SQL counting.** Executions through JDBC `Statement`, `PreparedStatement` and `CallableStatement` are counted when they start. Each batch is one execution. A thrown exception or a batch result containing `Statement.EXECUTE_FAILED` increments the failure counter.
 
 ----------------------------------------------------
 
