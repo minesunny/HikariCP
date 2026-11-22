@@ -19,6 +19,7 @@ package com.zaxxer.hikari.pool;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import com.zaxxer.hikari.HikariPoolMXBean;
+import com.zaxxer.hikari.metrics.ConnectionStats;
 import com.zaxxer.hikari.metrics.MetricsTrackerFactory;
 import com.zaxxer.hikari.metrics.PoolStats;
 import com.zaxxer.hikari.util.ConcurrentBag;
@@ -31,9 +32,12 @@ import java.lang.reflect.InvocationTargetException;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.SQLTransientConnectionException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
+import java.util.concurrent.atomic.LongAdder;
 
 import static com.zaxxer.hikari.util.ClockSource.*;
 import static com.zaxxer.hikari.util.ConcurrentBag.IConcurrentBagEntry.STATE_IN_USE;
@@ -69,6 +73,8 @@ public final class HikariPool extends PoolBase implements HikariPoolMXBean, IBag
 
    private final PoolEntryCreator poolEntryCreator = new PoolEntryCreator();
    private final PoolEntryCreator postFillPoolEntryCreator = new PoolEntryCreator("After adding ");
+   private final LongAdder executionCount = new LongAdder();
+   private final LongAdder failureCount = new LongAdder();
    private final ThreadPoolExecutor addConnectionExecutor;
    private final ThreadPoolExecutor closeConnectionExecutor;
 
@@ -168,7 +174,7 @@ public final class HikariPool extends PoolBase implements HikariPoolMXBean, IBag
                timeout = hardTimeout - elapsedMillis(startTime);
             }
             else {
-               metricsTracker.recordBorrowStats(poolEntry, startTime);
+               final var acquiredAt = currentTime();
                if (isRequestBoundariesEnabled) {
                   try {
                      poolEntry.connection.beginRequest();
@@ -176,7 +182,9 @@ public final class HikariPool extends PoolBase implements HikariPoolMXBean, IBag
                      logger.warn("beginRequest Failed for: {}, ({})", poolEntry.connection, e.getMessage());
                   }
                }
-               return poolEntry.createProxyConnection(leakTaskFactory.schedule(poolEntry));
+               final var proxyConnection = poolEntry.createProxyConnection(leakTaskFactory.schedule(poolEntry));
+               metricsTracker.recordBorrowStats(proxyConnection, startTime, acquiredAt);
+               return proxyConnection;
             }
          } while (timeout > 0L);
 
@@ -428,12 +436,14 @@ public final class HikariPool extends PoolBase implements HikariPoolMXBean, IBag
    /**
     * Recycle PoolEntry (add back to the pool)
     *
-    * @param poolEntry the PoolEntry to recycle
+    * @param proxyConnection the borrow being returned
     */
    @Override
-   void recycle(final PoolEntry poolEntry)
+   void recycle(final ProxyConnection proxyConnection)
    {
-      metricsTracker.recordConnectionUsage(poolEntry);
+      final var poolEntry = proxyConnection.getPoolEntry();
+      metricsTracker.recordConnectionUsage(proxyConnection);
+      poolEntry.endBorrow(proxyConnection.getBorrowId());
       if (poolEntry.isMarkedEvicted()) {
          closeConnection(poolEntry, EVICTED_CONNECTION_MESSAGE);
       } else {
@@ -665,6 +675,16 @@ public final class HikariPool extends PoolBase implements HikariPoolMXBean, IBag
       }
    }
 
+   void recordExecution()
+   {
+      executionCount.increment();
+   }
+
+   void recordExecutionFailure()
+   {
+      failureCount.increment();
+   }
+
    /**
     * Create a PoolStats instance that will be used by metrics tracking, with a pollable resolution of 1 second.
     *
@@ -672,7 +692,17 @@ public final class HikariPool extends PoolBase implements HikariPoolMXBean, IBag
     */
    private PoolStats getPoolStats()
    {
-      return new PoolStats(SECONDS.toMillis(1)) {
+      return new PoolStats(SECONDS.toMillis(1), this::lookupConnectionStats, this::snapshotConnectionStats) {
+         @Override
+         public long getExecutionCount() {
+            return executionCount.sum();
+         }
+
+         @Override
+         public long getFailureCount() {
+            return failureCount.sum();
+         }
+
          @Override
          protected void update() {
             this.pendingThreads = HikariPool.this.getThreadsAwaitingConnection();
@@ -683,6 +713,31 @@ public final class HikariPool extends PoolBase implements HikariPoolMXBean, IBag
             this.minConnections = config.getMinimumIdle();
          }
       };
+   }
+
+   private ConnectionStats lookupConnectionStats(long borrowId)
+   {
+      for (var entry : connectionBag.values()) {
+         final var stats = entry.getConnectionStats(borrowId);
+         if (stats != null) {
+            return stats;
+         }
+      }
+
+      return null;
+   }
+
+   private List<ConnectionStats> snapshotConnectionStats()
+   {
+      final var snapshot = new ArrayList<ConnectionStats>();
+      for (var entry : connectionBag.values()) {
+         final var stats = entry.getConnectionStats();
+         if (stats != null) {
+            snapshot.add(stats);
+         }
+      }
+
+      return snapshot;
    }
 
    /**

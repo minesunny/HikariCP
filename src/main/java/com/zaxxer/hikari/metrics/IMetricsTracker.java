@@ -21,11 +21,34 @@ package com.zaxxer.hikari.metrics;
  */
 public interface IMetricsTracker extends AutoCloseable
 {
-   default void recordConnectionCreatedMillis(long connectionCreatedMillis) {}
+   /**
+    * Records a connection creation attempt after metrics are enabled, including JDBC setup.
+    *
+    * @param connectionCreatedMillis elapsed creation and setup time in milliseconds
+    * @param connectionId identifier assigned to the connection, or 0 if creation failed
+    * @param borrowId 0 for creation events, which precede checkout
+    */
+   default void recordConnectionCreatedMillis(long connectionCreatedMillis, long connectionId, long borrowId) {}
 
-   default void recordConnectionAcquiredNanos(final long elapsedAcquiredNanos) {}
+   /**
+    * Records a successful acquisition or an acquisition timeout.
+    *
+    * @param elapsedAcquiredNanos elapsed acquisition time in nanoseconds
+    * @param connectionId identifier of the acquired connection, or 0 on timeout
+    * @param borrowId identifier of this borrow, or 0 on timeout
+    * @param borrowCount one-based borrow number for the connection, or 0 on timeout
+    */
+   default void recordConnectionAcquiredNanos(long elapsedAcquiredNanos, long connectionId, long borrowId, long borrowCount) {}
 
-   default void recordConnectionUsageMillis(final long elapsedBorrowedMillis) {}
+   /**
+    * Records the duration of a borrow returned to the pool.
+    *
+    * @param elapsedBorrowedMillis elapsed time of the borrow in milliseconds
+    * @param connectionId identifier of the returned connection
+    * @param borrowId identifier of the completed borrow
+    * @param borrowCount one-based borrow number for the connection
+    */
+   default void recordConnectionUsageMillis(long elapsedBorrowedMillis, long connectionId, long borrowId, long borrowCount) {}
 
    default void recordConnectionTimeout() {}
 

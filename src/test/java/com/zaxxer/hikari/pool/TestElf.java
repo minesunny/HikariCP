@@ -29,7 +29,6 @@ import org.apache.logging.log4j.core.layout.CsvLogEventLayout;
 import org.apache.logging.slf4j.Log4jLogger;
 import org.slf4j.LoggerFactory;
 
-import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.lang.reflect.Field;
@@ -201,28 +200,26 @@ public final class TestElf
 
    public static class FauxWebClassLoader extends ClassLoader
    {
-      static final byte[] classBytes = new byte[16_000];
-
       @Override
-      public Class<?> loadClass(final String name) throws ClassNotFoundException
+      public synchronized Class<?> loadClass(final String name) throws ClassNotFoundException
       {
+         final var loadedClass = findLoadedClass(name);
+         if (loadedClass != null) {
+            return loadedClass;
+         }
+
          if (name.startsWith("java") || name.startsWith("org")) {
             return super.loadClass(name, true);
          }
 
          final String resourceName = "/" + name.replace('.', '/') + ".class";
          final URL resource = this.getClass().getResource(resourceName);
-         try (DataInputStream is = new DataInputStream(resource.openStream())) {
-            int read = 0;
-            while (read < classBytes.length) {
-               final int rc = is.read(classBytes, read, classBytes.length - read);
-               if (rc == -1) {
-                  break;
-               }
-               read += rc;
-            }
-
-            return defineClass(name, classBytes, 0, read);
+         if (resource == null) {
+            throw new ClassNotFoundException(name);
+         }
+         try (var stream = resource.openStream()) {
+            final byte[] classBytes = stream.readAllBytes();
+            return defineClass(name, classBytes, 0, classBytes.length);
          }
          catch (IOException e) {
             throw new ClassNotFoundException(name);

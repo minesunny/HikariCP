@@ -148,14 +148,14 @@ public class MicrometerMetricsTracker implements IMetricsTracker
 
    /** {@inheritDoc} */
    @Override
-   public void recordConnectionAcquiredNanos(final long elapsedAcquiredNanos)
+   public void recordConnectionAcquiredNanos(final long elapsedAcquiredNanos, long connectionId, long borrowId, long borrowCount)
    {
       connectionObtainTimer.record(elapsedAcquiredNanos, TimeUnit.NANOSECONDS);
    }
 
    /** {@inheritDoc} */
    @Override
-   public void recordConnectionUsageMillis(final long elapsedBorrowedMillis)
+   public void recordConnectionUsageMillis(final long elapsedBorrowedMillis, long connectionId, long borrowId, long borrowCount)
    {
       connectionUsage.record(elapsedBorrowedMillis, TimeUnit.MILLISECONDS);
    }
@@ -167,7 +167,7 @@ public class MicrometerMetricsTracker implements IMetricsTracker
    }
 
    @Override
-   public void recordConnectionCreatedMillis(long connectionCreatedMillis)
+   public void recordConnectionCreatedMillis(long connectionCreatedMillis, long connectionId, long borrowId)
    {
       connectionCreation.record(connectionCreatedMillis, TimeUnit.MILLISECONDS);
    }

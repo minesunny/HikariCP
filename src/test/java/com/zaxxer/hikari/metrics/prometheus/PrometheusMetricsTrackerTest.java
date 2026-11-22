@@ -210,9 +210,9 @@ public class PrometheusMetricsTrackerTest
       IMetricsTracker prometheusTracker = prometheusFactory.create("testPool", new StubPoolStats(0));
 
       prometheusTracker.recordConnectionTimeout();
-      prometheusTracker.recordConnectionAcquiredNanos(42L);
-      prometheusTracker.recordConnectionUsageMillis(111L);
-      prometheusTracker.recordConnectionCreatedMillis(101L);
+      prometheusTracker.recordConnectionAcquiredNanos(42L, 1L, 2L, 1L);
+      prometheusTracker.recordConnectionUsageMillis(111L, 1L, 2L, 1L);
+      prometheusTracker.recordConnectionCreatedMillis(101L, 1L, 0L);
 
       assertThat(defaultCollectorRegistry.getSampleValue(
          "hikaricp_connection_timeout_total", LABEL_NAMES, labelValues),

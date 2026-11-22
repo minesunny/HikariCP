@@ -60,16 +60,16 @@ public final class JavassistProxyFactory
       System.out.println("Generating following classes to " + genDirectory);
 
       // Cast is not needed for these
-      String methodBody = "{ try { return delegate.method($$); } catch (SQLException e) { throw checkException(e); } }";
-      generateProxyClass(Connection.class, ProxyConnection.class.getName(), methodBody);
-      generateProxyClass(Statement.class, ProxyStatement.class.getName(), methodBody);
-      generateProxyClass(ResultSet.class, ProxyResultSet.class.getName(), methodBody);
-      generateProxyClass(DatabaseMetaData.class, ProxyDatabaseMetaData.class.getName(), methodBody);
+      String methodCall = "delegate.method($$)";
+      generateProxyClass(Connection.class, ProxyConnection.class.getName(), methodCall);
+      generateProxyClass(Statement.class, ProxyStatement.class.getName(), methodCall);
+      generateProxyClass(ResultSet.class, ProxyResultSet.class.getName(), methodCall);
+      generateProxyClass(DatabaseMetaData.class, ProxyDatabaseMetaData.class.getName(), methodCall);
 
       // For these we have to cast the delegate
-      methodBody = "{ try { return ((cast) delegate).method($$); } catch (SQLException e) { throw checkException(e); } }";
-      generateProxyClass(PreparedStatement.class, ProxyPreparedStatement.class.getName(), methodBody);
-      generateProxyClass(CallableStatement.class, ProxyCallableStatement.class.getName(), methodBody);
+      methodCall = "((cast) delegate).method($$)";
+      generateProxyClass(PreparedStatement.class, ProxyPreparedStatement.class.getName(), methodCall);
+      generateProxyClass(CallableStatement.class, ProxyCallableStatement.class.getName(), methodCall);
 
       modifyProxyFactory();
    }
@@ -111,7 +111,7 @@ public final class JavassistProxyFactory
    /**
     *  Generate Javassist Proxy Classes
     */
-   private static <T> void generateProxyClass(Class<T> primaryInterface, String superClassName, String methodBody) throws Exception
+   private static <T> void generateProxyClass(Class<T> primaryInterface, String superClassName, String methodCall) throws Exception
    {
       var newClassName = superClassName.replaceAll("(.+)\\.(\\w+)", "$1.Hikari$2");
 
@@ -130,6 +130,7 @@ public final class JavassistProxyFactory
       }
 
       var methods = new HashSet<String>();
+      final var statementProxy = Statement.class.isAssignableFrom(primaryInterface);
       for (var intf : getAllInterfaces(primaryInterface)) {
          var intfCt = classPool.getCtClass(intf.getName());
          targetCt.addInterface(intfCt);
@@ -152,21 +153,21 @@ public final class JavassistProxyFactory
             // Clone the method we want to inject into
             var method = CtNewMethod.copy(intfMethod, targetCt, null);
 
-            var modifiedBody = methodBody;
+            var invocation = methodCall;
 
-            // If the super-Proxy has concrete methods (non-abstract), transform the call into a simple super.method() call
+            // Use the handwritten proxy method unless the JDBC interface provides a default method.
             var superMethod = superCt.getMethod(intfMethod.getName(), intfMethod.getSignature());
             if ((superMethod.getModifiers() & Modifier.ABSTRACT) != Modifier.ABSTRACT && !isDefaultMethod(intf, intfMethod)) {
-               modifiedBody = modifiedBody.replace("((cast) ", "");
-               modifiedBody = modifiedBody.replace("delegate", "super");
-               modifiedBody = modifiedBody.replace("super)", "super");
+               invocation = "super.method($$)";
             }
 
-            modifiedBody = modifiedBody.replace("cast", primaryInterface.getName());
-
-            // Generate a method that simply invokes the same method on the delegate
-            if (isThrowsSqlException(intfMethod)) {
-               modifiedBody = modifiedBody.replace("method", method.getName());
+            invocation = invocation.replace("cast", primaryInterface.getName()).replace("method", method.getName());
+            String modifiedBody;
+            if (statementProxy && method.getName().startsWith("execute")) {
+               modifiedBody = statementExecutionBody(method, invocation);
+            }
+            else if (isThrowsSqlException(intfMethod)) {
+               modifiedBody = "{ try { return " + invocation + "; } catch (SQLException e) { throw checkException(e); } }";
             }
             else {
                modifiedBody = "{ return ((cast) delegate).method($$); }".replace("method", method.getName()).replace("cast", primaryInterface.getName());
@@ -183,6 +184,21 @@ public final class JavassistProxyFactory
 
       targetCt.getClassFile().setMajorVersion(ClassFile.JAVA_8);
       targetCt.writeFile(genDirectory);
+   }
+
+   private static String statementExecutionBody(CtMethod method, String invocation) throws NotFoundException
+   {
+      final var batch = "executeBatch".equals(method.getName()) || "executeLargeBatch".equals(method.getName());
+      final var batchOutcome = batch
+         ? " if (result != null) { for (int i = 0; i < result.length; i++) {"
+            + " if (result[i] == java.sql.Statement.EXECUTE_FAILED) { failed = true; break; } } }"
+         : "";
+
+      return "{ long executionId = connection.getPoolEntry().recordExecution(connection.getBorrowId());"
+         + " boolean failed = true; try { " + method.getReturnType().getName() + " result = " + invocation + ";"
+         + " failed = false;" + batchOutcome + " return result;"
+         + " } catch (SQLException e) { throw checkException(e); }"
+         + " finally { connection.getPoolEntry().finishExecution(connection.getBorrowId(), executionId, failed); } }";
    }
 
    private static boolean isThrowsSqlException(CtMethod method)

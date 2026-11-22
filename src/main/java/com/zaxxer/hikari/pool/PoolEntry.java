@@ -15,6 +15,7 @@
  */
 package com.zaxxer.hikari.pool;
 
+import com.zaxxer.hikari.metrics.ConnectionStats;
 import com.zaxxer.hikari.util.ConcurrentBag.IConcurrentBagEntry;
 import com.zaxxer.hikari.util.FastList;
 import org.slf4j.Logger;
@@ -23,8 +24,11 @@ import org.slf4j.LoggerFactory;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static com.zaxxer.hikari.util.ClockSource.*;
 import static com.zaxxer.hikari.util.ClockSource.currentTime;
@@ -38,10 +42,20 @@ final class PoolEntry implements IConcurrentBagEntry
 {
    private static final Logger LOGGER = LoggerFactory.getLogger(PoolEntry.class);
    private static final AtomicIntegerFieldUpdater<PoolEntry> stateUpdater;
+   private static final AtomicLong idSequence = new AtomicLong();
 
+   final long id = nextId();
    Connection connection;
    long lastAccessed;
    long lastBorrowed;
+
+   private long borrowCount;
+   private long activeBorrowId;
+   private long executionCount;
+   private long failureCount;
+   private long borrowedAtEpochMillis;
+   private long lastActivityAtEpochMillis;
+   private final Map<Long, Long> runningExecutions = new LinkedHashMap<>();
 
    @SuppressWarnings("FieldCanBeLocal")
    private volatile int state = 0;
@@ -71,14 +85,79 @@ final class PoolEntry implements IConcurrentBagEntry
       this.openStatements = new FastList<>(Statement.class, 16);
    }
 
+   static long nextId()
+   {
+      return idSequence.incrementAndGet();
+   }
+
+   synchronized long beginBorrow(long borrowId)
+   {
+      activeBorrowId = borrowId;
+      executionCount = 0;
+      failureCount = 0;
+      borrowedAtEpochMillis = System.currentTimeMillis();
+      lastActivityAtEpochMillis = borrowedAtEpochMillis;
+      runningExecutions.clear();
+      return ++borrowCount;
+   }
+
+   synchronized void endBorrow(long borrowId)
+   {
+      if (activeBorrowId == borrowId) {
+         activeBorrowId = 0;
+         runningExecutions.clear();
+      }
+   }
+
+   synchronized long recordExecution(long borrowId)
+   {
+      if (activeBorrowId != borrowId) {
+         return 0;
+      }
+
+      lastActivityAtEpochMillis = System.currentTimeMillis();
+      hikariPool.recordExecution();
+      runningExecutions.put(++executionCount, lastActivityAtEpochMillis);
+      return executionCount;
+   }
+
+   synchronized void finishExecution(long borrowId, long executionId, boolean failed)
+   {
+      if (executionId != 0 && failed) {
+         hikariPool.recordExecutionFailure();
+      }
+      if (activeBorrowId == borrowId && runningExecutions.remove(executionId) != null) {
+         lastActivityAtEpochMillis = System.currentTimeMillis();
+         if (failed) {
+            ++failureCount;
+         }
+      }
+   }
+
+   synchronized ConnectionStats getConnectionStats(long borrowId)
+   {
+      if (borrowId == 0 || activeBorrowId != borrowId) {
+         return null;
+      }
+
+      final long oldest = runningExecutions.isEmpty() ? 0 : runningExecutions.values().iterator().next();
+      return new ConnectionStats(borrowId, executionCount, failureCount, borrowedAtEpochMillis,
+         lastActivityAtEpochMillis, runningExecutions.size(), oldest);
+   }
+
+   synchronized ConnectionStats getConnectionStats()
+   {
+      return getConnectionStats(activeBorrowId);
+   }
+
    /**
     * Release this entry back to the pool.
     */
-   void recycle()
+   void recycle(final ProxyConnection proxyConnection)
    {
       if (connection != null) {
          this.lastAccessed = currentTime();
-         hikariPool.recycle(this);
+         hikariPool.recycle(proxyConnection);
       }
    }
 
@@ -96,7 +175,7 @@ final class PoolEntry implements IConcurrentBagEntry
       this.keepalive = keepalive;
    }
 
-   Connection createProxyConnection(final ProxyLeakTask leakTask)
+   ProxyConnection createProxyConnection(final ProxyLeakTask leakTask)
    {
       return ProxyFactory.getProxyConnection(this, connection, openStatements, leakTask, isReadOnly, isAutoCommit);
    }

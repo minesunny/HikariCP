@@ -93,14 +93,14 @@ public final class CodaHaleMetricsTracker implements IMetricsTracker
 
    /** {@inheritDoc} */
    @Override
-   public void recordConnectionAcquiredNanos(final long elapsedAcquiredNanos)
+   public void recordConnectionAcquiredNanos(final long elapsedAcquiredNanos, long connectionId, long borrowId, long borrowCount)
    {
       connectionObtainTimer.update(elapsedAcquiredNanos, TimeUnit.NANOSECONDS);
    }
 
    /** {@inheritDoc} */
    @Override
-   public void recordConnectionUsageMillis(final long elapsedBorrowedMillis)
+   public void recordConnectionUsageMillis(final long elapsedBorrowedMillis, long connectionId, long borrowId, long borrowCount)
    {
       connectionUsage.update(elapsedBorrowedMillis);
    }
@@ -112,7 +112,7 @@ public final class CodaHaleMetricsTracker implements IMetricsTracker
    }
 
    @Override
-   public void recordConnectionCreatedMillis(long connectionCreatedMillis)
+   public void recordConnectionCreatedMillis(long connectionCreatedMillis, long connectionId, long borrowId)
    {
       connectionCreation.update(connectionCreatedMillis);
    }
